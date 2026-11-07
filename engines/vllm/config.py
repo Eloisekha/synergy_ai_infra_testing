@@ -13,6 +13,7 @@ class VLLMRunConfig:
         args = {
             "model": self.model,
             "max_model_len": self.max_model_len,
+            "gpu_memory_utilization": 0.3,
         }
 
         if self.extra_engine_args:

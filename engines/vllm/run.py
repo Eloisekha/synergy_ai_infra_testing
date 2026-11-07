@@ -1,5 +1,7 @@
 import sys
-
+import json
+import os
+import traceback
 import torch
 import vllm
 from vllm import LLM, SamplingParams
@@ -18,46 +20,102 @@ def print_environment():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
 
-def run(config: VLLMRunConfig):
+def run(config: VLLMRunConfig, state: str):
     print_environment()
 
     print("\n=== Configuration ===")
     print(config)
 
-    llm = LLM(**config.engine_args())
+    report = {
+        "state": state,
+        "config": config.engine_args(),
+    }
 
-    sampling_params = SamplingParams(
-        temperature=0.0,
-        max_tokens=config.max_tokens,
-    )
+    try:
+        llm = LLM(**config.engine_args())
 
-    prompts = [
-        "Explain what a GPU is in one sentence."
-    ]
+        sampling_params = SamplingParams(
+            temperature=0.0,
+            max_tokens=config.max_tokens,
+        )
 
-    outputs = llm.generate(
-        prompts,
-        sampling_params,
-    )
+        prompts = [
+            "Explain what a GPU is in one sentence."
+        ]
 
-    print("\n=== Output ===")
+        outputs = llm.generate(
+            prompts,
+            sampling_params,
+        )
 
-    for output in outputs:
-        print(output.outputs[0].text.strip())
+        text = outputs[0].outputs[0].text.strip()
+
+        print("\n=== Output ===")
+        print(text)
+
+        report.update({
+            "status": "ok",
+            "output": text,
+            "error_type": None,
+            "error": None,
+        })
+
+        success = True
+
+    except Exception as exc:
+        print("\n=== Error ===")
+        print(f"{type(exc).__name__}: {exc}")
+
+        report.update({
+            "status": "error",
+            "output": None,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        })
+
+        traceback.print_exc()
+
+        success = False
+
+    os.makedirs("reports", exist_ok=True)
+
+    with open(f"reports/{state}.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    return success
 
 
 def main():
     from flags import FLAGS
     from pairs import pair_configs
 
-    flag_f = FLAGS["chunked_prefill"]
-    flag_g = FLAGS["prefix_caching"]
+    if len(sys.argv) != 2:
+        raise SystemExit(
+            "Usage: python engines/vllm/run.py <00|10|01|11>"
+        )
 
-    configs = pair_configs(flag_f, flag_g)
+    state = sys.argv[1]
 
-    for state, extra_args in configs.items():
-        print(f"{state}: {extra_args}")
+    configs = pair_configs(
+        FLAGS["chunked_prefill"],
+        FLAGS["prefix_caching"],
+    )
 
+    if state not in configs:
+        raise SystemExit(
+            f"Invalid state: {state}. Choose one of: 00, 10, 01, 11"
+        )
+
+    config = VLLMRunConfig(
+        extra_engine_args=configs[state]
+    )
+
+    print(f"=== State: {state} ===")
+    
+    success = run(config, state)
+
+    if not success:
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()
