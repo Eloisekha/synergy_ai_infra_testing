@@ -7,7 +7,8 @@ import vllm
 from vllm import LLM, SamplingParams
 
 from config import VLLMRunConfig
-
+from flags import FLAGS
+from pairs import pair_configs, report_dir, DEFAULT_FLAG_F, DEFAULT_FLAG_G
 
 def print_environment():
     print("=== Environment ===")
@@ -20,14 +21,20 @@ def print_environment():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
 
-def run(config: VLLMRunConfig, state: str):
+def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
     print_environment()
+
+    old_report = os.path.join(report_dir(flag_f, flag_g), f"{state}.json")
+    if os.path.exists(old_report):
+        os.remove(old_report)
 
     print("\n=== Configuration ===")
     print(config)
 
     report = {
         "state": state,
+        "flag_f": flag_f,
+        "flag_g": flag_g,
         "config": config.engine_args(),
     }
 
@@ -77,29 +84,36 @@ def run(config: VLLMRunConfig, state: str):
 
         success = False
 
-    os.makedirs("reports", exist_ok=True)
+    out_dir = report_dir(flag_f, flag_g)
+    os.makedirs(out_dir, exist_ok=True)
 
-    with open(f"reports/{state}.json", "w") as f:
+    with open(os.path.join(out_dir, f"{state}.json"), "w") as f:
         json.dump(report, f, indent=2)
 
     return success
 
 
 def main():
-    from flags import FLAGS
-    from pairs import pair_configs
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 4):
         raise SystemExit(
-            "Usage: python engines/vllm/run.py <00|10|01|11>"
+            "Usage: python engines/vllm/run.py <00|10|01|11> [flag_f flag_g]"
         )
 
     state = sys.argv[1]
+    flag_f = sys.argv[2] if len(sys.argv) == 4 else DEFAULT_FLAG_F
+    flag_g = sys.argv[3] if len(sys.argv) == 4 else DEFAULT_FLAG_G
 
-    configs = pair_configs(
-        FLAGS["chunked_prefill"],
-        FLAGS["prefix_caching"],
-    )
+    for name in (flag_f, flag_g):
+        if name not in FLAGS:
+            raise SystemExit(
+                f"Unknown flag: {name}. Choose one of: {', '.join(FLAGS)}"
+            )
+
+    if flag_f == flag_g:
+        raise SystemExit("flag_f and flag_g must be different flags")
+
+    configs = pair_configs(FLAGS[flag_f], FLAGS[flag_g])
 
     if state not in configs:
         raise SystemExit(
@@ -112,7 +126,7 @@ def main():
 
     print(f"=== State: {state} ===")
     
-    success = run(config, state)
+    success = run(config, state, flag_f, flag_g)
 
     if not success:
         raise SystemExit(1)
