@@ -2,10 +2,7 @@ import json
 import os
 import sys
 
-from pairs import report_dir, DEFAULT_FLAG_F, DEFAULT_FLAG_G
-
-
-STATES = ["00", "01", "10", "11"]
+from pairs import STATES, report_dir, resolve_pair
 
 
 def load(state, flag_f, flag_g):
@@ -31,13 +28,22 @@ def load(state, flag_f, flag_g):
 
 def check(report, baseline):
     started_ok = report["status"] == "ok"
-    output_not_empty = bool((report.get("output") or "").strip())
+    output_not_empty = bool(
+        (report.get("output") or "").strip()
+    )
 
     return {
         "started_ok": started_ok,
         "output_not_empty": output_not_empty,
-        "output_changed": report.get("output") != baseline.get("output"),
-        "verdict": "pass" if started_ok and output_not_empty else "fail",
+        "output_changed": (
+            report.get("output")
+            != baseline.get("output")
+        ),
+        "verdict": (
+            "pass"
+            if started_ok and output_not_empty
+            else "fail"
+        ),
     }
 
 
@@ -45,27 +51,41 @@ def _differs(a, b):
     return a != b
 
 
-def _interaction(x, flag_f_only, flag_g_only, both, base):
+def _interaction(
+    x,
+    flag_f_only,
+    flag_g_only,
+    both,
+    base,
+):
     """
     Check whether each flag's observed effect depends on
     the state of the other flag.
     """
 
+    # Effect of F when G is unchanged:
+    # 10 vs 00
     f_without_g = _differs(
         x[flag_f_only],
         x[base],
     )
 
+    # Effect of F when G is already changed:
+    # 11 vs 01
     f_with_g = _differs(
         x[both],
         x[flag_g_only],
     )
 
+    # Effect of G when F is unchanged:
+    # 01 vs 00
     g_without_f = _differs(
         x[flag_g_only],
         x[base],
     )
 
+    # Effect of G when F is already changed:
+    # 11 vs 10
     g_with_f = _differs(
         x[both],
         x[flag_f_only],
@@ -89,7 +109,8 @@ def pair_check(reports):
     missing_reports = [
         state
         for state in STATES
-        if reports[state].get("error_type") == "MissingReport"
+        if reports[state].get("error_type")
+        == "MissingReport"
     ]
 
     if missing_reports:
@@ -100,7 +121,8 @@ def pair_check(reports):
             "output_interaction": None,
             "interaction": None,
             "reason": (
-                "pair evaluation unavailable: missing reports for "
+                "pair evaluation unavailable: "
+                "missing reports for "
                 + ", ".join(missing_reports)
             ),
         }
@@ -129,7 +151,9 @@ def pair_check(reports):
             for key, value in status_part.items()
             if key != "interaction"
         },
-        "status_interaction": status_part["interaction"],
+        "status_interaction": (
+            status_part["interaction"]
+        ),
     }
 
     # 2. Output behavior
@@ -159,7 +183,9 @@ def pair_check(reports):
             if key != "interaction"
         }
 
-        result["output_interaction"] = output_part["interaction"]
+        result["output_interaction"] = (
+            output_part["interaction"]
+        )
 
     else:
         result["output_effects"] = None
@@ -178,22 +204,31 @@ def pair_check(reports):
         result["interaction"] = None
 
     else:
-        result["interaction"] = result["output_interaction"]
+        result["interaction"] = (
+            result["output_interaction"]
+        )
 
     return result
 
 
 def main():
-    if len(sys.argv) not in (1, 3):
+    try:
+        flag_f, flag_g = resolve_pair(
+            sys.argv[1:]
+        )
+    except ValueError as exc:
         raise SystemExit(
-            "Usage: python engines/vllm/oracle.py [flag_f flag_g]"
+            "Usage: python engines/vllm/oracle.py "
+            "[flag_f flag_g]\n"
+            f"{exc}"
         )
 
-    flag_f = sys.argv[1] if len(sys.argv) == 3 else DEFAULT_FLAG_F
-    flag_g = sys.argv[2] if len(sys.argv) == 3 else DEFAULT_FLAG_G
-
     reports = {
-        state: load(state, flag_f, flag_g)
+        state: load(
+            state,
+            flag_f,
+            flag_g,
+        )
         for state in STATES
     }
 
@@ -209,10 +244,22 @@ def main():
         )
 
         print(f"\nState {state}")
-        print(f"started_ok: {result['started_ok']}")
-        print(f"output_not_empty: {result['output_not_empty']}")
-        print(f"output_changed: {result['output_changed']}")
-        print(f"verdict: {result['verdict']}")
+        print(
+            f"started_ok: "
+            f"{result['started_ok']}"
+        )
+        print(
+            f"output_not_empty: "
+            f"{result['output_not_empty']}"
+        )
+        print(
+            f"output_changed: "
+            f"{result['output_changed']}"
+        )
+        print(
+            f"verdict: "
+            f"{result['verdict']}"
+        )
 
     print("\n=== Pair Interaction ===")
 
@@ -221,7 +268,9 @@ def main():
     print("\nStatus effects:")
 
     if result["status_effects"] is not None:
-        for key, value in result["status_effects"].items():
+        for key, value in (
+            result["status_effects"].items()
+        ):
             print(f"{key}: {value}")
 
         print(
@@ -234,7 +283,9 @@ def main():
     print("\nOutput effects:")
 
     if result["output_effects"] is not None:
-        for key, value in result["output_effects"].items():
+        for key, value in (
+            result["output_effects"].items()
+        ):
             print(f"{key}: {value}")
 
         print(
@@ -245,10 +296,15 @@ def main():
         print("unavailable")
 
     if result.get("reason"):
-        print(f"reason: {result['reason']}")
+        print(
+            f"reason: {result['reason']}"
+        )
 
     print("\nOverall:")
-    print(f"interaction: {result['interaction']}")
+    print(
+        f"interaction: "
+        f"{result['interaction']}"
+    )
 
 
 if __name__ == "__main__":

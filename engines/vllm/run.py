@@ -8,7 +8,7 @@ from vllm import LLM, SamplingParams
 
 from config import VLLMRunConfig
 from flags import FLAGS
-from pairs import pair_configs, report_dir, DEFAULT_FLAG_F, DEFAULT_FLAG_G
+from pairs import STATES, pair_configs, report_dir, resolve_pair
 
 def print_environment():
     print("=== Environment ===")
@@ -24,9 +24,12 @@ def print_environment():
 def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
     print_environment()
 
-    old_report = os.path.join(report_dir(flag_f, flag_g), f"{state}.json")
-    if os.path.exists(old_report):
-        os.remove(old_report)
+    out_dir = report_dir(flag_f, flag_g)
+    report_path = os.path.join(out_dir, f"{state}.json")
+
+    # Remove a stale report before starting a new run.
+    if os.path.exists(report_path):
+        os.remove(report_path)
 
     print("\n=== Configuration ===")
     print(config)
@@ -84,52 +87,60 @@ def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
 
         success = False
 
-    out_dir = report_dir(flag_f, flag_g)
     os.makedirs(out_dir, exist_ok=True)
 
-    with open(os.path.join(out_dir, f"{state}.json"), "w") as f:
+    with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
 
     return success
 
 
 def main():
-
-    if len(sys.argv) not in (2, 4):
+    if len(sys.argv) < 2:
         raise SystemExit(
-            "Usage: python engines/vllm/run.py <00|10|01|11> [flag_f flag_g]"
+            "Usage: python engines/vllm/run.py "
+            "<00|10|01|11> [flag_f flag_g]"
         )
 
     state = sys.argv[1]
-    flag_f = sys.argv[2] if len(sys.argv) == 4 else DEFAULT_FLAG_F
-    flag_g = sys.argv[3] if len(sys.argv) == 4 else DEFAULT_FLAG_G
 
-    for name in (flag_f, flag_g):
-        if name not in FLAGS:
-            raise SystemExit(
-                f"Unknown flag: {name}. Choose one of: {', '.join(FLAGS)}"
-            )
-
-    if flag_f == flag_g:
-        raise SystemExit("flag_f and flag_g must be different flags")
-
-    configs = pair_configs(FLAGS[flag_f], FLAGS[flag_g])
-
-    if state not in configs:
+    if state not in STATES:
         raise SystemExit(
-            f"Invalid state: {state}. Choose one of: 00, 10, 01, 11"
+            f"Invalid state: {state}. "
+            f"Choose one of: {', '.join(STATES)}"
         )
+
+    try:
+        flag_f, flag_g = resolve_pair(sys.argv[2:])
+    except ValueError as exc:
+        raise SystemExit(
+            "Usage: python engines/vllm/run.py "
+            "<00|10|01|11> [flag_f flag_g]\n"
+            f"{exc}"
+        )
+
+    configs = pair_configs(
+        FLAGS[flag_f],
+        FLAGS[flag_g],
+    )
 
     config = VLLMRunConfig(
         extra_engine_args=configs[state]
     )
 
     print(f"=== State: {state} ===")
-    
-    success = run(config, state, flag_f, flag_g)
+    print(f"=== Pair: {flag_f} x {flag_g} ===")
+
+    success = run(
+        config,
+        state,
+        flag_f,
+        flag_g,
+    )
 
     if not success:
         raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()
