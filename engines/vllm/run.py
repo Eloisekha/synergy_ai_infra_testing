@@ -6,6 +6,7 @@ import torch
 import vllm
 from vllm import LLM, SamplingParams
 
+from input_generator import generate_inputs
 from config import VLLMRunConfig
 from flags import FLAGS
 from pairs import STATES, pair_configs, report_dir, resolve_pair
@@ -49,16 +50,24 @@ def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
             max_tokens=config.max_tokens,
         )
 
-        prompts = [
-            "Explain what a GPU is in one sentence."
-        ]
+        generated_inputs = generate_inputs()
+        input_type = os.environ.get("INPUT_TYPE", "short")
+
+        if input_type not in generated_inputs:
+            raise ValueError(f"Unknown input type: {input_type}")
+
+        prompts = generated_inputs[input_type]
 
         outputs = llm.generate(
             prompts,
             sampling_params,
         )
 
-        text = outputs[0].outputs[0].text.strip()
+        texts = [
+            result.outputs[0].text.strip()
+            for result in outputs
+        ]
+        text = texts[0]
 
         print("\n=== Output ===")
         print(text)
@@ -66,6 +75,9 @@ def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
         report.update({
             "status": "ok",
             "output": text,
+            "outputs": texts,
+            "input_type": input_type,
+            "prompts": prompts,
             "error_type": None,
             "error": None,
         })
