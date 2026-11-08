@@ -49,9 +49,16 @@ def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
             max_tokens=config.max_tokens,
         )
 
-        prompts = [
-            "Explain what a GPU is in one sentence."
-        ]
+        #### Original prompt, commented out (kept for reference) ####
+        # prompts = [
+        #     "Explain what a GPU is in one sentence."
+        # ]
+
+        #### to read the 20 test prompts from prompts.json ####
+        prompts_path = os.path.join(os.path.dirname(__file__), "prompts.json")
+        with open(prompts_path) as f:
+            tests = json.load(f)
+        prompts = [t["prompt"] for t in tests]
 
         outputs = llm.generate(
             prompts,
@@ -59,6 +66,10 @@ def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
         )
 
         text = outputs[0].outputs[0].text.strip()
+
+        #### to collect all 20 answer ####
+        answers = [o.outputs[0].text.strip() for o in outputs]
+        text = "\n".join(answers)
 
         print("\n=== Output ===")
         print(text)
@@ -69,6 +80,12 @@ def run(config: VLLMRunConfig, state: str, flag_f:str, flag_g:str):
             "error_type": None,
             "error": None,
         })
+
+        #### to save each prompt's correct answer next to vLLM's answer ####
+        report["results"] = [
+            {"id": t["id"], "correct_answer": t["answer"], "vllm_answer": a}
+            for t, a in zip(tests, answers)
+        ]
 
         success = True
 
